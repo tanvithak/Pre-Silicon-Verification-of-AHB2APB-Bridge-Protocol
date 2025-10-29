@@ -1,9 +1,3 @@
-`include "uvm_macros.svh" 
-`include "ahb_sequencer.svh"
-`include "ahb_driver.svh"
-`include "ahb_monitor.svh"
-import uvm_pkg::*;
-
 class ahb_agt extends uvm_agent;
  `uvm_component_utils(ahb_agt)
 
@@ -11,19 +5,31 @@ class ahb_agt extends uvm_agent;
   super.new(name,parent);
  endfunction
 
+ bridge_cfg ahb_apb_cfg;
  ahb_sequencer ahb_seqr;
  ahb_driver ahb_drv;
  ahb_monitor ahb_mon;
 
  virtual function void build_phase(uvm_phase phase);
+  if(!uvm_config_db #(bridge_cfg)::get(this,"",bridge_cfg,ahb_apb_cfg)
+   `uvm_fatal(get_type_name(),"bridge_cfg get operation failed")
+
   super.build_phase(phase);
+
   ahb_mon = ahb_monitor::type_id::create("ahb_mon",this);
-  ahb_seqr = ahb_sequencer::type_id::create("ahb_seqr",this);
-  ahb_drv = ahb_driver::type_id::create("ahb_drv",this);
+  
+  if(ahb_apb_cfg.ahb_is_active)
+   begin
+    ahb_seqr = ahb_sequencer::type_id::create("ahb_seqr",this);
+    ahb_drv = ahb_driver::type_id::create("ahb_drv",this);
+   end
  endfunction
 
  virtual function void connect_phase(uvm_phase phase);
-  ahb_drv.seq_item_port.connect(ahb_seqr.seq_item_export);
+  if(ahb_apb_cfg.ahb_is_active)
+   begin  
+    ahb_drv.seq_item_port.connect(ahb_seqr.seq_item_export);
+   end
  endfunction
 
 endclass
