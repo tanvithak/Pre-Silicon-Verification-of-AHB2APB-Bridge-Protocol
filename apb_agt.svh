@@ -11,7 +11,7 @@ class apb_agt extends uvm_agent;
  apb_monitor apb_mon;
 
  virtual function void build_phase(uvm_phase phase);
-  if(!uvm_config_db #(bridge_cfg)::get(this,"",bridge_cfg,ahb_apb_cfg)
+   if(!uvm_config_db #(bridge_cfg)::get(this,"","bridge_cfg",ahb_apb_cfg))
    `uvm_fatal(get_type_name(),"bridge_cfg get operation failed")
 
   super.build_phase(phase);
