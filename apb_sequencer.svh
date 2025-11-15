@@ -1,6 +1,3 @@
-`include "uvm_macros.svh" 
-`include "apb_seq_item.svh"
-import uvm_pkg::*;
 class apb_sequencer extends uvm_sequencer#(apb_seq_item);
  `uvm_component_utils(apb_sequencer)
  
