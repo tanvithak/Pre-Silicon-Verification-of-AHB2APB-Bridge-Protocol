@@ -1,5 +1,5 @@
 class bridge_cfg extends uvm_object;
- `uvm_object(bridge_cfg)
+ `uvm_object_utils(bridge_cfg)
 
  virtual ahb_intf ahb_vif;
  virtual apb_intf apb_vif;
