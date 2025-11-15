@@ -100,8 +100,12 @@ class ahb_burst_sequence extends ahb_base_sequence;
             hburst == 3'b001;  // INCR
             htrans == (i == 0) ? 2'b10 : 2'b11; // NONSEQ then SEQ
             hsize inside {[0:2]};
-       haddr == (i == 0)? 32'h1000_0000 : (prev.haddr + (1 << prev.hsize));})
-        `uvm_error("AHB_BURST_SEQ",$sformatf("Randomization failed at beat %0d", i));
+            haddr == (i == 0)
+                     ? 32'h1000_0000
+                     : (prev.haddr + (1 << prev.hsize));
+          })
+        `uvm_error("AHB_BURST_SEQ",
+          $sformatf("Randomization failed at beat %0d", i));
       finish_item(req);
 
       prev = req; // store previous beat for address increment
