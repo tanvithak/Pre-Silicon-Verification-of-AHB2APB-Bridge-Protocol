@@ -10,11 +10,11 @@ interface ahb_intf(input bit CLK);
 
  logic HREADY_OUT;
  logic [31:0] HRDATA;
- logic HRESP;
+ logic [1:0]HRESP;
 
  //DRIVER clocking block
 
-  clocking ahb_drv_cb@(posedge CLK);
+  clocking AHB_DRV_CB @(posedge CLK);
     default input #1 output #1;
     output HADDR;
     output HWDATA;
@@ -33,7 +33,7 @@ interface ahb_intf(input bit CLK);
 
  //MONITOR CLOCKING BLOCK
 
-  clocking ahb_mon_cb@(posedge CLK);
+  clocking AHB_MON_CB @(posedge CLK);
     default input #1 output #1;
     input HADDR;
     input HWDATA;
@@ -50,7 +50,7 @@ interface ahb_intf(input bit CLK);
 
 
  //MODPORTS
-  modport AHB_DRV_MP(clocking ahb_drv_cb, input CLK);
-  modport AHB_MON_MP(clocking ahb_mon_cb, input CLK);
+  modport AHB_DRV_MP(clocking AHB_DRV_CB, input CLK);
+  modport AHB_MON_MP(clocking AHB_MON_CB, input CLK);
 
 endinterface
