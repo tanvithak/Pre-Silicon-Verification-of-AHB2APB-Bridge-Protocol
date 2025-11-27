@@ -18,9 +18,9 @@ package bridge_pkg;
  `include "apb_agt.svh"
 
  `include "scoreboard.svh"
- `include "virtual_sequencer.svh"
- `include "virtual_sequence.svh"
+
  `include "envir.svh"
  `include "test.svh"
 
 endpackage
+
