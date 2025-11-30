@@ -1,9 +1,8 @@
 class ahb_seq_item extends uvm_sequence_item;
 
  `uvm_object_utils(ahb_seq_item)
-
- logic hclk;
- logic hresetn;
+	
+ rand bit hresetn;
 
  rand logic [31:0] haddr;
  rand logic [31:0] hwdata;
@@ -18,6 +17,9 @@ class ahb_seq_item extends uvm_sequence_item;
 
  rand logic [7:0] length;
 
+ //constraint LOW_RESET{hresetn dist {1:=9, 0:=1};}
+ constraint res{hresetn == 1;}
+
  constraint valid_hsize{hsize inside {[0:2]};}
 
  constraint Hsize_count {hsize dist { 3'b000:=3, 3'b001:=3, 3'b010:=3};}
@@ -31,7 +33,6 @@ class ahb_seq_item extends uvm_sequence_item;
 // This method overrides the default print function and provides clean formatting.
  virtual function void do_print(uvm_printer printer);
    super.do_print(printer);
-   printer.print_field("hclk",    hclk,    1, UVM_BIN);
    printer.print_field("hresetn", hresetn, 1, UVM_BIN);
    printer.print_field("hwrite",  hwrite,  1, UVM_BIN);
    printer.print_field("htrans",  htrans,  2, UVM_BIN);
