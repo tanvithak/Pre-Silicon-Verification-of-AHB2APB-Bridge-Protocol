@@ -1,7 +1,7 @@
 class apb_agt extends uvm_agent;
  `uvm_component_utils(apb_agt)
 
- function new(string name="apb_agt",uvm_component parent);
+ function new(string name="apb_agt",uvm_component parent=null);
   super.new(name,parent);
  endfunction
 
@@ -18,7 +18,7 @@ class apb_agt extends uvm_agent;
 
   apb_mon = apb_monitor::type_id::create("apb_mon",this);
 
-  if(ahb_apb_cfg.apb_is_active)
+  if(ahb_apb_cfg.apb_is_active == UVM_ACTIVE)
    begin
     apb_seqr = apb_sequencer::type_id::create("apb_seqr",this);
     apb_drv = apb_driver::type_id::create("apb_drv",this);
@@ -26,7 +26,7 @@ class apb_agt extends uvm_agent;
  endfunction
 
  virtual function void connect_phase(uvm_phase phase);
-  if(ahb_apb_cfg.apb_is_active)
+  if(ahb_apb_cfg.apb_is_active == UVM_ACTIVE)
    apb_drv.seq_item_port.connect(apb_seqr.seq_item_export);
  endfunction
 
