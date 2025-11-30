@@ -6,9 +6,8 @@ class envir extends uvm_env;
  ahb_agt ahb_agt1;
  apb_agt apb_agt1;
  scoreboard sb;
- ahb_apb_vseqr vsqr;
 
- function new(string name="envir",uvm_component parent);
+ function new(string name="envir",uvm_component parent=null);
   super.new(name,parent);
  endfunction
 
@@ -27,18 +26,11 @@ class envir extends uvm_env;
   if(ahb_apb_cfg.has_scoreboard)
    sb = scoreboard::type_id::create("sb",this);
    
-   vsqr = ahb_apb_vseqr::type_id::create("vsqr",this);
  endfunction
 
 
  function void connect_phase(uvm_phase phase);
   uvm_top.print_topology();
-  
-  /*if(ahb_agt1 != null)
-   vsqr.ahb_sqr = ahb_agt1.ahb_seqr;
-  
-  if(apb_agt1 != null)
-   vsqr.apb_sqr = apb_agt1.apb_seqr;*/
 
   if(ahb_apb_cfg.has_ahb_agent && ahb_apb_cfg.has_scoreboard)
     ahb_agt1.ahb_mon.ahb_ap.connect(sb.ahb_ap_fifo.analysis_export);
