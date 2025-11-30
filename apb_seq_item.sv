@@ -1,8 +1,7 @@
 class apb_seq_item extends uvm_sequence_item;
  `uvm_object_utils(apb_seq_item)
 
- bit clk;
- bit presetn;
+ logic presetn;
  logic penable;
  logic pwrite;
  logic psel;
@@ -10,7 +9,8 @@ class apb_seq_item extends uvm_sequence_item;
  logic [31:0] pwdata;
 
  rand logic [31:0] prdata;
- logic pready;
+ rand logic pready;
+ rand bit PSLVERR;
 
  function new(string name="apb_seq_item");
   super.new(name);
@@ -18,7 +18,7 @@ class apb_seq_item extends uvm_sequence_item;
 
  virtual function void do_print(uvm_printer printer);
    super.do_print(printer);
-   printer.print_field("clk",     clk,     1, UVM_BIN);
+
    printer.print_field("presetn", presetn, 1, UVM_BIN);
    printer.print_field("pwrite",  pwrite,  1, UVM_BIN);
    printer.print_field("penable", penable, 2, UVM_BIN);
