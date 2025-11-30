@@ -2,25 +2,26 @@ package bridge_pkg;
  `include "uvm_macros.svh" 
  import uvm_pkg::*;
 
- `include "bridge_cfg.svh"
- `include "ahb_seq_item.svh"
- `include "ahb_monitor.svh"
- `include "ahb_sequencer.svh"
- `include "ahb_seqs.svh"
- `include "ahb_driver.svh"
- `include "ahb_agt.svh"
+ `include "bridge_cfg.sv"
+ `include "ahb_seq_item.sv"
+ `include "ahb_sequencer.sv"
+ `include "ahb_driver.sv"
+ `include "ahb_monitor.sv"
+ `include "ahb_agt.sv"
 
- `include "apb_seq_item.svh"
- `include "apb_monitor.svh"
- `include "apb_sequencer.svh"
- `include "apb_seqs.svh"
- `include "apb_driver.svh"
- `include "apb_agt.svh"
+ `include "apb_seq_item.sv"
+ `include "apb_sequencer.sv"
+ `include "apb_driver.sv"
+ `include "apb_monitor.sv"
+ `include "apb_agt.sv"
 
- `include "scoreboard.svh"
+ `include "scoreboard.sv"
 
- `include "envir.svh"
- `include "test.svh"
+ `include "envir.sv"
+
+
+ `include "ahb_seqs.sv"
+ `include "apb_seqs.sv"
+ `include "test.sv"
 
 endpackage
-
