@@ -1,7 +1,7 @@
 class ahb_agt extends uvm_agent;
  `uvm_component_utils(ahb_agt)
 
- function new(string name="ahb_agt",uvm_component parent);
+ function new(string name="ahb_agt",uvm_component parent=null);
   super.new(name,parent);
  endfunction
 
@@ -18,7 +18,7 @@ class ahb_agt extends uvm_agent;
 
   ahb_mon = ahb_monitor::type_id::create("ahb_mon",this);
   
-  if(ahb_apb_cfg.ahb_is_active)
+  if(ahb_apb_cfg.ahb_is_active == UVM_ACTIVE)
    begin
     ahb_seqr = ahb_sequencer::type_id::create("ahb_seqr",this);
     ahb_drv = ahb_driver::type_id::create("ahb_drv",this);
@@ -26,7 +26,7 @@ class ahb_agt extends uvm_agent;
  endfunction
 
  virtual function void connect_phase(uvm_phase phase);
-  if(ahb_apb_cfg.ahb_is_active)
+  if(ahb_apb_cfg.ahb_is_active == UVM_ACTIVE)
    begin  
     ahb_drv.seq_item_port.connect(ahb_seqr.seq_item_export);
    end
