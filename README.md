@@ -6,7 +6,7 @@ As mentioned in the testplan document, there are two agents one for AHB and the 
 
 The components which are different for the AHB and APB:
 -> Interface
--> Sequence
+-> Sequences
 -> Sequence item
 -> Sequencer
 -> Driver
@@ -18,6 +18,4 @@ The common components:
 -> Environment
 -> Test
 
-"The design files are passed from Maven Silicon by the author Susmitha Nayak."
-
-The design has AHB as Master and APB as Slave[Specifically 1 AHB Master and 4 APB Slaves]. 
+"I do not own The design files"
