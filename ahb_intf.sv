@@ -42,6 +42,7 @@ interface ahb_intf(input bit CLK);
     input HSIZE;
     input HBURST;
     input HREADY_IN;
+    input HRESETn;
 
     input HREADY_OUT;
     input HRDATA;
