@@ -1,4 +1,4 @@
-class apb_seqs extends uvm_sequence#(apb_seq_item);
+class apb_seqs extends uvm_sequence #(apb_seq_item);
  `uvm_object_utils(apb_seqs)
 
  function new(string name="apb_seqs");
