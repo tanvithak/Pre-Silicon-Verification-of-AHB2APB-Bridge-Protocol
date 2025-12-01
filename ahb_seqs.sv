@@ -13,7 +13,14 @@ class ahb_base_sequence extends uvm_sequence #(ahb_seq_item);
 
 endclass
 
+
+
+
+
+
+
 //write sequence:
+
 class ahb_write_sequence extends ahb_base_sequence;
   `uvm_object_utils(ahb_write_sequence)
 
@@ -78,9 +85,6 @@ class ahb_read_sequence extends ahb_base_sequence;
             hburst == 3'b000;
             hresetn == 1;
             hsize == 3'b010;  // 32-bit
-            
-            // FIX: Remove 'hready' constraint (it causes failures)
-            // FIX: Force Address Alignment (Ends in 0,4,8,C)
             haddr[1:0] == 2'b00; 
             haddr inside {[32'h8000_0000 : 32'h8000_00FF]}; 
           })
@@ -111,9 +115,9 @@ endclass
 
 
 
-// ---------------------------------------------------------------
+
 // BURST SEQUENCE (Fixed with Inter-Beat Delay)
-// ---------------------------------------------------------------
+
 class ahb_burst_sequence extends ahb_base_sequence;
   `uvm_object_utils(ahb_burst_sequence)
 
@@ -126,9 +130,12 @@ class ahb_burst_sequence extends ahb_base_sequence;
     ahb_seq_item prev;
     int num_beats = 4;
     int i;
+    bit do_write;
+    
 
     repeat(5) begin // Send 5 Bursts
-       `uvm_info("BURST_SEQ", "Starting INCR4 Burst with BUSY padding", UVM_LOW)
+       `uvm_info("ahb_burst_sequence", "Starting INCR4 Burst with BUSY padding", UVM_LOW)
+       do_write = $urandom_range(0,1);
 
        for (i = 0; i < num_beats; i++) begin
          
@@ -136,7 +143,7 @@ class ahb_burst_sequence extends ahb_base_sequence;
          req = ahb_seq_item::type_id::create($sformatf("req_%0d", i));
          start_item(req);
          if (!req.randomize() with {
-               hwrite == 1; 
+               hwrite == do_write; 
                hresetn == 1; 
                hsize == 3'b010; // 32-bit
                hburst == 3'b011; // INCR4
@@ -149,7 +156,8 @@ class ahb_burst_sequence extends ahb_base_sequence;
                    htrans == 2'b11; // SEQ (Next Beats)
                    haddr == prev.haddr + 4; 
                }
-             }) `uvm_error("SEQ", "Randomization failed");
+             }) 
+           `uvm_error("ahb_burst_sequence", "Randomization failed");
          finish_item(req);
          prev = req;
 
@@ -190,9 +198,9 @@ endclass
 
 
 
-// ---------------------------------------------------------------
-// WRITE-READ SEQUENCE (Data Integrity)
-// ---------------------------------------------------------------
+
+// WRITE-READ SEQUENCE
+
 class ahb_write_read_sequence extends ahb_base_sequence;
   `uvm_object_utils(ahb_write_read_sequence)
 
@@ -206,7 +214,7 @@ class ahb_write_read_sequence extends ahb_base_sequence;
 
     repeat (5) begin
       // 1. WRITE
-      req = ahb_seq_item::type_id::create("req_write");
+      req = ahb_seq_item::type_id::create("req");
       start_item(req);
       assert(req.randomize() with {
             hwrite == 1; htrans == 2'b10; hburst == 0; hresetn == 1;
@@ -218,7 +226,9 @@ class ahb_write_read_sequence extends ahb_base_sequence;
       
       // Idle + Delay
       req = ahb_seq_item::type_id::create("idle");
-      start_item(req); assert(req.randomize() with { htrans==0; hresetn==1; }); finish_item(req);
+      start_item(req); 
+      assert(req.randomize() with { htrans==0; hresetn==1; }); 
+      finish_item(req);
       #100;
 
       // 2. READ (Same Address)
@@ -233,8 +243,195 @@ class ahb_write_read_sequence extends ahb_base_sequence;
 
       // Idle + Delay
       req = ahb_seq_item::type_id::create("idle");
-      start_item(req); assert(req.randomize() with { htrans==0; hresetn==1; }); finish_item(req);
+      start_item(req); 
+      assert(req.randomize() with { htrans==0; hresetn==1; }); 
+      finish_item(req);
       #100;
     end
+  endtask
+endclass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// RANDOM SEQUENCE 
+
+
+class ahb_random_sequence extends ahb_base_sequence;
+  `uvm_object_utils(ahb_random_sequence)
+
+  function new(string name = "ahb_random_sequence");
+    super.new(name);
+  endfunction
+
+  task body();
+    ahb_seq_item req;
+    ahb_seq_item prev_req;
+    int i, burst_len;
+
+    `uvm_info("ahb_random_sequence", "Starting Randomized Stress Test...", UVM_LOW)
+
+    repeat(50) begin 
+      req = ahb_seq_item::type_id::create("req");
+      start_item(req);
+
+      if (!req.randomize() with {
+            hresetn == 1;
+            hwrite inside {0, 1};
+            hburst inside {3'b000, 3'b001, 3'b011}; // Single, Incr, Incr4
+            hsize inside {3'b000, 3'b001, 3'b010};  // Byte, Half, Word
+            
+            // Alignment
+            if (hsize == 2) haddr[1:0] == 0;
+            if (hsize == 1) haddr[0] == 0;
+            
+            haddr inside {[32'h8000_0000 : 32'h8000_00F0]}; 
+            htrans == 2'b10; // NONSEQ
+      }) 
+       `uvm_error("ahb_random_sequence", "Randomization failed");
+
+      finish_item(req);
+      prev_req = req;
+
+
+      // CASE 1: FIXED BURST (INCR4)
+
+      if (req.hburst == 3'b011) begin 
+         for(i=0; i<3; i++) begin
+            // INSERT BUSY CYCLE
+            req = ahb_seq_item::type_id::create("busy");
+            start_item(req);
+            assert(req.randomize() with { 
+                htrans == 2'b01; // BUSY
+                hresetn == 1; haddr == prev_req.haddr; 
+                hburst == prev_req.hburst; hwrite == prev_req.hwrite; hsize == prev_req.hsize;
+            });
+            finish_item(req);
+            #20; // Wait for APB
+
+            // DATA BEAT
+            req = ahb_seq_item::type_id::create("burst_beat");
+            start_item(req);
+            assert(req.randomize() with {
+                hwrite == prev_req.hwrite; htrans == 2'b11; // SEQ
+                hburst == prev_req.hburst; hsize  == prev_req.hsize; hresetn == 1;
+                haddr  == prev_req.haddr + (1 << prev_req.hsize); 
+            });
+            finish_item(req);
+            prev_req = req;
+         end
+      end
+      
+
+      // CASE 2: UNDEFINED BURST (INCR)
+
+      else if (req.hburst == 3'b001) begin 
+         burst_len = $urandom_range(2, 5);
+         for(i=0; i<burst_len; i++) begin
+            // INSERT BUSY CYCLE (FIXED HERE)
+            req = ahb_seq_item::type_id::create("busy");
+            start_item(req);
+            assert(req.randomize() with { 
+                htrans == 2'b01; // BUSY
+                hresetn == 1; haddr == prev_req.haddr; 
+                hburst == prev_req.hburst; hwrite == prev_req.hwrite; hsize == prev_req.hsize;
+            });
+            finish_item(req);
+            #20; // Wait for APB
+
+            // DATA BEAT
+            req = ahb_seq_item::type_id::create("incr_beat");
+            start_item(req);
+            assert(req.randomize() with {
+                hwrite == prev_req.hwrite; htrans == 2'b11; // SEQ
+                hburst == prev_req.hburst; hsize  == prev_req.hsize; hresetn == 1;
+                haddr == prev_req.haddr + (1 << prev_req.hsize); 
+            });
+            finish_item(req);
+            prev_req = req;
+         end
+      end
+
+      // Cleanup
+      req = ahb_seq_item::type_id::create("idle");
+      start_item(req);
+      assert(req.randomize() with { htrans==0; hresetn==1; });
+      finish_item(req);
+      #100;
+    end
+    `uvm_info("ahb_random_sequence", "Random Sequence Completed", UVM_LOW)
+  endtask
+endclass
+
+
+
+
+
+
+
+
+
+
+
+
+class ahb_error_sequence extends ahb_base_sequence;
+  `uvm_object_utils(ahb_error_sequence)
+  function new(string name="ahb_error_sequence"); super.new(name); endfunction
+
+  task body();
+    ahb_seq_item req;
+    
+    `uvm_info("ahb_error_sequence", "Starting Error Injection Test...", UVM_LOW)
+
+    // CASE 1: UNALIGNED ACCESS (Should trigger ERROR response)
+
+    req = ahb_seq_item::type_id::create("unaligned_req");
+    start_item(req);
+    // Force a 32-bit write to an address ending in '1' (Illegal!)
+    assert(req.randomize() with { 
+        hsize == 3'b010;      // 32-bit
+        haddr[1:0] == 2'b01;  // Unaligned!
+        htrans == 2'b10;      // NONSEQ
+        hwrite == 1; 
+        hresetn == 1;
+    });
+    finish_item(req);
+    #50; 
+
+
+    // CASE 2: ILLEGAL SEQ (SEQ without NONSEQ)
+
+    // First, ensure bus is IDLE
+    req = ahb_seq_item::type_id::create("idle");
+    start_item(req); 
+    assert(req.randomize() with { htrans==0; hresetn==1; });
+    finish_item(req);
+    #20;
+
+    // Now send a SEQ packet immediately (Illegal from IDLE)
+    req = ahb_seq_item::type_id::create("bad_seq");
+    start_item(req);
+    assert(req.randomize() with { 
+        htrans == 2'b11; // SEQ (Illegal start!)
+        hresetn == 1;
+        haddr[1:0] == 0;
+    });
+    finish_item(req);
+    #50;
+
+    // Cleanup
+    req = ahb_seq_item::type_id::create("idle");
+    start_item(req); assert(req.randomize() with { htrans==0; hresetn==1; }); finish_item(req);
+    #100;
   endtask
 endclass
