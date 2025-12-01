@@ -188,3 +188,74 @@ class test_four extends ahb_apb_test;
    phase.phase_done.set_drain_time(this, 100);
  endtask
 endclass
+
+
+
+
+
+class test_five extends ahb_apb_test;
+  `uvm_component_utils(test_five)
+ 
+  ahb_random_sequence ahb_seq;
+  apb_seqs apb_seq;
+
+  function new(string name="test_five",uvm_component parent);
+   super.new(name,parent);
+  endfunction
+ 
+  function void build_phase(uvm_phase phase);
+    super.build_phase(phase);
+    ahb_seq = ahb_random_sequence::type_id::create("ahb_seq");
+    apb_seq = apb_seqs::type_id::create("apb_seq");
+
+    cfg.enable_data_check = 0; 
+  endfunction
+ 
+  task run_phase(uvm_phase phase);
+    phase.raise_objection(this);
+    #100; 
+    fork
+      ahb_seq.start(env1.ahb_agt1.ahb_seqr);
+      forever apb_seq.start(env1.apb_agt1.apb_seqr); 
+    join_any
+    phase.drop_objection(this);
+    phase.phase_done.set_drain_time(this, 100);
+  endtask
+endclass
+
+
+
+
+
+
+
+
+
+class test_six extends ahb_apb_test;
+ `uvm_component_utils(test_six)
+ ahb_error_sequence ahb_seq;
+ apb_seqs apb_seq;
+
+ function new(string name="test_six",uvm_component parent); super.new(name,parent); endfunction
+ 
+ function void build_phase(uvm_phase phase);
+   super.build_phase(phase);
+   ahb_seq = ahb_error_sequence::type_id::create("ahb_seq");
+   apb_seq = apb_seqs::type_id::create("apb_seq");
+   
+   // Disable Data Check because error responses might not return valid data
+   cfg.enable_data_check = 0; 
+   uvm_config_db #(bridge_cfg)::set(this, "*", "bridge_cfg", cfg);
+ endfunction
+ 
+ task run_phase(uvm_phase phase);
+   phase.raise_objection(this);
+   #100;
+   fork
+     ahb_seq.start(env1.ahb_agt1.ahb_seqr);
+     forever apb_seq.start(env1.apb_agt1.apb_seqr); 
+   join_any
+   phase.drop_objection(this);
+   phase.phase_done.set_drain_time(this, 100);
+ endtask
+endclass
