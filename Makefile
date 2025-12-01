@@ -1,133 +1,99 @@
 # -----------------------------------------------------------
-
 # VARIABLES
-
 # -----------------------------------------------------------
-
 # Source Files
-
-RTL_SRC   = ahb_intf.sv apb_intf.sv ahb_apb_pkg.sv top.sv
-
-# (Note: I added bridge_pkg.sv because it contains your environment classes)
-
-
+# FIXED: Added missing RTL source files (ahb_slave, apb_controller, etc.)
+# Order is important: Definitions -> Submodules -> Top Modules -> TB
+RTL_SRC   = definitions.v \
+            ahb_intf.sv \
+            apb_intf.sv \
+            ahb_slave.v \
+            apb_controller.v \
+            apb_interface.v \
+            ahb_apb_top.v \
+            ahb_apb_pkg.sv \
+            top.sv
 
 # List of all tests for regression
+TEST_LIST = test_one test_two test_three test_four test_five test_six
 
-TEST_LIST = test_one test_two test_three test_four
-
-
-
-# Default Test (if you just type 'make run')
-
+# Default Test
 TEST      ?= test_one
 
-
-
-# Random Seed (Default is random based on system time)
-
+# Random Seed
 SEED      ?= $(shell date +%s)
 
-
-
-# Log Directory
-
+# Output Directories
 LOG_DIR   = regression_logs
-
-
+COV_DIR   = coverage_data
 
 # -----------------------------------------------------------
-
 # TARGETS
-
 # -----------------------------------------------------------
+.PHONY: all compile run regression report clean
 
-.PHONY: all compile run regression clean report
-
-
-
-all: compile regression
-
-
+all: compile regression report
 
 # 1. COMPILATION
-
+# Added +cover=bcesf to enable Code Coverage
 compile:
-
-vlog $(RTL_SRC)
-
-
+	vlog +cover=bcesf $(RTL_SRC)
 
 # 2. RUN SINGLE TEST
-
-# Usage: make run TEST=test_three SEED=123
-
+# Usage: make run TEST=test_three
 run: compile
-
-vsim -c -voptargs="+acc" -sv_seed $(SEED) -t 1ns \
-
-+UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=UVM_LOW \
-
--do "run -all; exit" work.top -l $(TEST).log
-
-
+	@mkdir -p $(COV_DIR)
+	vsim -c -voptargs="+acc" -coverage -sv_seed $(SEED) -t 1ns \
+	+UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=UVM_LOW \
+	-do "coverage save -onexit $(COV_DIR)/$(TEST).ucdb; run -all; exit" \
+	work.top -l $(TEST).log
 
 # 3. REGRESSION SUITE
-
 regression: compile
+	@echo "------------------------------------------------"
+	@echo "  STARTING REGRESSION (Seed: $(SEED))"
+	@echo "------------------------------------------------"
+	@mkdir -p $(LOG_DIR)
+	@mkdir -p $(COV_DIR)
+	@rm -f $(COV_DIR)/*.ucdb 
+	@pass_count=0; \
+	fail_count=0; \
+	for t in $(TEST_LIST); do \
+		echo "Running $$t..."; \
+		logfile="$(LOG_DIR)/$$t.log"; \
+		covfile="$(COV_DIR)/$$t.ucdb"; \
+		vsim -c -voptargs="+acc" -coverage -sv_seed $(SEED) -t 1ns \
+			+UVM_TESTNAME=$$t +UVM_VERBOSITY=UVM_LOW \
+			-do "coverage save -onexit $$covfile; run -all; exit" \
+			work.top > $$logfile 2>&1; \
+		\
+		if grep -q "UVM_ERROR :    0" $$logfile && grep -q "UVM_FATAL :    0" $$logfile; then \
+			echo "  -> [PASS] $$t"; \
+			pass_count=$$((pass_count + 1)); \
+		else \
+			echo "  -> [FAIL] $$t (Check $$logfile)"; \
+			fail_count=$$((fail_count + 1)); \
+		fi; \
+	done; \
+	echo "------------------------------------------------"; \
+	echo "  SUMMARY: PASS=$$pass_count  FAIL=$$fail_count"; \
+	echo "------------------------------------------------"
 
-@echo "------------------------------------------------"
+# 4. COVERAGE REPORT
+report:
+	@echo "Checking for coverage files..."
+	@if ls $(COV_DIR)/*.ucdb 1> /dev/null 2>&1; then \
+		echo "Merging coverage files..."; \
+		vcover merge $(COV_DIR)/merged_coverage.ucdb $(COV_DIR)/*.ucdb; \
+		echo "Generating HTML report..."; \
+		vcover report -html $(COV_DIR)/merged_coverage.ucdb -output cov_html; \
+		echo "------------------------------------------------"; \
+		echo "Coverage Report generated in: cov_html/index.html"; \
+		echo "------------------------------------------------"; \
+	else \
+		echo "ERROR: No .ucdb files found in $(COV_DIR). Run 'make regression' first."; \
+	fi
 
-@echo "  STARTING REGRESSION (Seed: $(SEED))"
-
-@echo "------------------------------------------------"
-
-@mkdir -p $(LOG_DIR)
-
-@pass_count=0; \
-
-fail_count=0; \
-
-for t in $(TEST_LIST); do \
-
-echo "Running $$t..."; \
-
-logfile="$(LOG_DIR)/$$t.log"; \
-
-vsim -c -voptargs="+acc" -sv_seed $(SEED) -t 1ns \
-
-+UVM_TESTNAME=$$t +UVM_VERBOSITY=UVM_LOW \
-
--do "run -all; exit" work.top > $$logfile 2>&1; \
-
-\
-
-if grep -q "UVM_ERROR :    0" $$logfile && grep -q "UVM_FATAL :    0" $$logfile; then \
-
-echo "  -> [PASS] $$t"; \
-
-pass_count=$$((pass_count + 1)); \
-
-else \
-
-echo "  -> [FAIL] $$t (Check $$logfile)"; \
-
-fail_count=$$((fail_count + 1)); \
-
-fi; \
-
-done; \
-
-echo "------------------------------------------------"; \
-
-echo "  SUMMARY: PASS=$$pass_count  FAIL=$$fail_count"; \
-
-echo "------------------------------------------------"
-
-
-
-# 4. CLEANUP
-
+# 5. CLEANUP
 clean:
-
-rm -rf work transcript *.log $(LOG_DIR)
+	rm -rf work transcript *.log $(LOG_DIR) $(COV_DIR) cov_html *.ucdb
