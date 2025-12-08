@@ -435,3 +435,70 @@ class ahb_error_sequence extends ahb_base_sequence;
     #100;
   endtask
 endclass
+
+
+
+
+
+
+
+class ahb_config_sequence extends ahb_base_sequence;
+  `uvm_object_utils(ahb_config_sequence)
+  function new(string name="ahb_config_sequence"); super.new(name); endfunction
+
+  task body();
+    ahb_seq_item req;
+    `uvm_info("CFG_SEQ", "Configuring Slave Registers...", UVM_LOW)
+
+    // Access internal registers 0x00 to 0x08
+    for (int i = 0; i <= 8; i++) begin
+      req = ahb_seq_item::type_id::create("cfg_req");
+      start_item(req);
+      assert(req.randomize() with { 
+          haddr == i;         // Target the config registers
+          hwrite == 1;        // Write mode
+          htrans == 2'b10;    // NONSEQ
+          hsize == 3'b010;    
+          hresetn == 1;
+      });
+      finish_item(req);
+      
+      // Need a delay here because config writes might take time or reset FSM
+      req = ahb_seq_item::type_id::create("idle");
+      start_item(req); assert(req.randomize() with { htrans==0; hresetn==1; }); finish_item(req);
+      #50;
+    end
+  endtask
+endclass
+
+
+
+
+
+
+
+class ahb_pipelined_write_sequence extends ahb_base_sequence;
+  `uvm_object_utils(ahb_pipelined_write_sequence)
+  function new(string name="ahb_pipelined_write_sequence"); super.new(name); endfunction
+
+  task body();
+    ahb_seq_item req;
+    `uvm_info("PIPE_SEQ", "Starting Pipelined Writes...", UVM_LOW)
+
+    // Send 3 writes back-to-back with NO DELAY
+    repeat(3) begin
+      req = ahb_seq_item::type_id::create("fast_write");
+      start_item(req);
+      assert(req.randomize() with { 
+          hwrite == 1; htrans == 2'b10; hresetn == 1;
+          haddr inside {[32'h8000_0000 : 32'h8000_00FF]};
+      });
+      finish_item(req);
+    end
+    
+    // Recovery
+    req = ahb_seq_item::type_id::create("idle");
+    start_item(req); assert(req.randomize() with { htrans==0; hresetn==1; }); finish_item(req);
+    #200; 
+  endtask
+endclass
