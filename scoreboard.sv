@@ -1,7 +1,6 @@
 class scoreboard extends uvm_scoreboard;
   `uvm_component_utils(scoreboard)
 
-
   uvm_tlm_analysis_fifo #(ahb_seq_item) ahb_ap_fifo;
   uvm_tlm_analysis_fifo #(apb_seq_item) apb_ap_fifo;
 
@@ -14,47 +13,52 @@ class scoreboard extends uvm_scoreboard;
   // Config Handle
   bridge_cfg cfg; 
 
-
   ahb_seq_item cov_pkt; 
 
-covergroup ahb_cg;
+  //----------------------------------------------------------------------------
+  // COVERAGE
+  //----------------------------------------------------------------------------
+  covergroup ahb_cg;
     option.per_instance = 1;
 
-    TRANS_TYPE: coverpoint cov_pkt.hwrite {
-      bins write = {1};
-      bins read  = {0};
+    SIZE: coverpoint cov_pkt.hsize {bins b2[] = {[0:2]} ;}//1,2,4 bytes of data
+    
+    TRANS: coverpoint cov_pkt.htrans {bins trans[] = {[2:3]} ;}//NS and S
+    
+    ADDR: coverpoint cov_pkt.haddr {
+        bins first_slave  = {[32'h8000_0000:32'h8000_03ff]};
+        bins second_slave = {[32'h8400_0000:32'h8400_03ff]};
+        bins third_slave  = {[32'h8800_0000:32'h8800_03ff]};
+        bins fourth_slave = {[32'h8C00_0000:32'h8C00_03ff]};
     }
 
-    TRANS_KIND: coverpoint cov_pkt.htrans {
-      bins idle   = {2'b00};
-      bins nonseq = {2'b10};
-      bins seq    = {2'b11};
-      ignore_bins busy = {2'b01}; 
+    DATA_IN: coverpoint cov_pkt.hwdata {
+        bins low  = {[0:32'h0000_ffff]};
+        bins mid1 = {[32'h0001_ffff:32'hffff_ffff]};
     }
 
-    // UPDATE: Enable Byte and Half-Word
-    TRANS_SIZE: coverpoint cov_pkt.hsize {
-      bins byte_8  = {3'b000};
-      bins half_16 = {3'b001};
-      bins word_32 = {3'b010};
-      ignore_bins others = {[3'b011:3'b111]};
+    DATA_OUT : coverpoint cov_pkt.hrdata {
+        bins low  = {[0:32'h0000_ffff]};
+        bins mid1 = {[32'h0001_ffff:32'hffff_ffff]};
     }
 
+    WRITE : coverpoint cov_pkt.hwrite;
 
-    BURST_TYPE: coverpoint cov_pkt.hburst {
-      bins single = {3'b000};
-      bins incr   = {3'b001}; 
-      bins incr4  = {3'b011};
-      ignore_bins others = {3'b010, [3'b100:3'b111]}; 
-    }
+    SIZEXWRITE: cross SIZE, WRITE;
 
-    CROSS_RW_BURST: cross TRANS_TYPE, BURST_TYPE;
-    CROSS_RW_SIZE:  cross TRANS_TYPE, TRANS_SIZE;
+    BURST_TYPE: coverpoint cov_pkt.hburst { 
+        bins single = {3'b000}; 
+        bins incr   = {3'b001}; 
+        bins incr4  = {3'b011}; 
+        ignore_bins others = {3'b010, [3'b100:3'b111]}; }
+
+   write_read_coverage : cross WRITE, TRANS;
+
   endgroup
 
-
-
-
+  //----------------------------------------------------------------------------
+  // CONSTRUCTOR & BUILD
+  //----------------------------------------------------------------------------
   function new(string name="scoreboard", uvm_component parent=null);
     super.new(name, parent);
     ahb_ap_fifo = new("ahb_ap_fifo", this);
@@ -64,16 +68,16 @@ covergroup ahb_cg;
 
   function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    // Get the config object to see if data checking is enabled
     if(!uvm_config_db #(bridge_cfg)::get(this, "", "bridge_cfg", cfg))
        `uvm_fatal("SCOREBOARD", "Failed to get bridge_cfg")
   endfunction
 
-
+  //----------------------------------------------------------------------------
+  // MATCHING LOGIC
+  //----------------------------------------------------------------------------
   function bit addr_match(bit[31:0] ahb_addr, bit[31:0] apb_addr);
     return (ahb_addr === apb_addr);  
   endfunction
-
 
   task match_and_check();
     apb_seq_item apb_pkt;
@@ -103,20 +107,47 @@ covergroup ahb_cg;
       check_read(ahb_pkt, apb_pkt);
   endtask
 
-  // WRITE CHECK
+  //----------------------------------------------------------------------------
+  // >>>>> UPDATED WRITE CHECK (Fixes the Data Mismatch) <<<<<
+  //----------------------------------------------------------------------------
   task check_write(ahb_seq_item ahb_tx, apb_seq_item apb_tx);
+    logic [31:0] expected_data; // Logic to hold strobed data
+
     if (apb_tx.pwrite !== 1'b1)
       `uvm_error("Scoreboard",$sformatf("WRITE CONTROL MISMATCH at 0x%0h",ahb_tx.haddr))
 
     if (apb_tx.paddr !== ahb_tx.haddr)
       `uvm_error("Scoreboard",$sformatf("ADDRESS MISMATCH: AHB=0x%0h APB=0x%0h",ahb_tx.haddr, apb_tx.paddr))
 
-    // --- DATA CHECK (CONDITIONAL) ---
+    // --- DATA CHECK ---
     if (cfg.enable_data_check) begin
-        if (apb_tx.pwdata !== ahb_tx.hwdata)
-          `uvm_error("Scoreboard",$sformatf("WRITE DATA MISMATCH: AHB=0x%0h APB=0x%0h", ahb_tx.hwdata, apb_tx.pwdata))
+        
+        expected_data = ahb_tx.hwdata; // Start with full data
+
+        // 
+        // Apply Strobing/Masking based on Size and Address
+        if (ahb_tx.hsize == 0) begin // 8-bit Byte
+            case (ahb_tx.haddr[1:0])
+                2'b00: expected_data = expected_data & 32'h000000FF;         // Byte 0
+                2'b01: expected_data = (expected_data >> 8)  & 32'h000000FF; // Byte 1
+                2'b10: expected_data = (expected_data >> 16) & 32'h000000FF; // Byte 2
+                2'b11: expected_data = (expected_data >> 24) & 32'h000000FF; // Byte 3
+            endcase
+        end
+        else if (ahb_tx.hsize == 1) begin // 16-bit Half-Word
+            case (ahb_tx.haddr[1])
+                1'b0: expected_data = expected_data & 32'h0000FFFF;          // Lower Half
+                1'b1: expected_data = (expected_data >> 16) & 32'h0000FFFF;  // Upper Half
+            endcase
+        end
+        
+        // Compare the CALCULATED expected data against APB data
+        if (apb_tx.pwdata !== expected_data)
+          `uvm_error("Scoreboard",$sformatf("WRITE DATA MISMATCH: AHB_Strobed=0x%0h APB=0x%0h (OrigAHB=0x%0h Size=%0d Addr=0x%0h)", 
+                                            expected_data, apb_tx.pwdata, ahb_tx.hwdata, ahb_tx.hsize, ahb_tx.haddr))
         else
-          `uvm_info("Scoreboard",$sformatf("WRITE PASS: ADDR=0x%0h DATA=0x%0h", ahb_tx.haddr, ahb_tx.hwdata),UVM_LOW)
+          `uvm_info("Scoreboard",$sformatf("WRITE PASS: ADDR=0x%0h DATA=0x%0h", ahb_tx.haddr, expected_data),UVM_LOW)
+          
     end else begin
         `uvm_info("Scoreboard", "WRITE PASS (Data Check Disabled)", UVM_LOW)
     end
@@ -124,7 +155,9 @@ covergroup ahb_cg;
     ref_memory[int'(ahb_tx.haddr)] = ahb_tx.hwdata;
   endtask
 
+  //----------------------------------------------------------------------------
   // READ CHECK
+  //----------------------------------------------------------------------------
   task check_read(ahb_seq_item ahb_tx, apb_seq_item apb_tx);
     if (apb_tx.paddr !== ahb_tx.haddr)
       `uvm_error("Scoreboard",$sformatf("READ ADDRESS MISMATCH: AHB=0x%0h APB=0x%0h",ahb_tx.haddr, apb_tx.paddr))
@@ -132,7 +165,6 @@ covergroup ahb_cg;
     if (apb_tx.pwrite !== 1'b0)
       `uvm_error("Scoreboard",$sformatf("READ CONTROL MISMATCH at 0x%0h",ahb_tx.haddr))
 
-    // --- DATA CHECK (CONDITIONAL) ---
     if (cfg.enable_data_check) begin
         if (ahb_tx.hrdata !== apb_tx.prdata)
           `uvm_error("Scoreboard",$sformatf("READ DATA MISMATCH: AHB=0x%0h APB=0x%0h", ahb_tx.hrdata, apb_tx.prdata))
@@ -143,7 +175,9 @@ covergroup ahb_cg;
     end
   endtask
 
-
+  //----------------------------------------------------------------------------
+  // RUN PHASE
+  //----------------------------------------------------------------------------
   task run_phase(uvm_phase phase);
     forever begin
       ahb_seq_item a_in;
