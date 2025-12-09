@@ -502,3 +502,266 @@ class ahb_pipelined_write_sequence extends ahb_base_sequence;
     #200; 
   endtask
 endclass
+
+
+
+
+
+
+class ahb_flexible_burst_sequence extends ahb_base_sequence;
+  `uvm_object_utils(ahb_flexible_burst_sequence)
+
+  // Randomize these to hit different coverage bins
+  rand bit [2:0] hburst_val;
+  rand bit [2:0] hsize_val; 
+  rand int unsigned length_val; // For undefined length bursts
+
+  // Constraints to ensure valid combinations
+  constraint c_burst_config {
+    hsize_val inside {3'b000, 3'b001, 3'b010}; // Byte, Half, Word
+    hburst_val inside {3'b000, 3'b001, 3'b010, 3'b011, 3'b100, 3'b101, 3'b110, 3'b111};}
+    
+   constraint c_defaults {
+    length_val inside {[1:16]};}
+
+  function new(string name = "ahb_flexible_burst_sequence");
+    super.new(name);
+  endfunction
+
+  task body();
+    ahb_seq_item req;
+    logic [31:0] current_addr;
+    logic [31:0] start_addr;
+    int beats;
+
+    // 1. Determine number of beats based on HBURST
+    case(hburst_val)
+      3'b000: beats = 1;  // SINGLE
+      3'b001: beats = length_val; // INCR (Undefined)
+      3'b010: beats = 4;  // WRAP4
+      3'b011: beats = 4;  // INCR4
+      3'b100: beats = 8;  // WRAP8
+      3'b101: beats = 8;  // INCR8
+      3'b110: beats = 16; // WRAP16
+      3'b111: beats = 16; // INCR16
+    endcase
+
+    // 2. Generate First Beat (NONSEQ)
+    req = ahb_seq_item::type_id::create("req");
+    start_item(req);
+    assert(req.randomize() with {
+        htrans == 2'b10; // NONSEQ
+        hburst == hburst_val;
+        hsize  == hsize_val;
+        hwrite == 1; // Or randomize this
+        hresetn == 1;
+        
+        // alignment constraints
+        if(hsize_val == 1) haddr[0] == 0;     // 16-bit aligned
+        if(hsize_val == 2) haddr[1:0] == 0;   // 32-bit aligned
+        
+        haddr inside {[32'h8000_0000 : 32'h8000_00FF]};
+    });
+    
+    // Store variables for the next beats
+    current_addr = req.haddr;
+    start_addr   = req.haddr; // Needed for wrapping calc
+    
+    finish_item(req);
+
+    // 3. Generate Remaining Beats (SEQ)
+    for(int i = 0; i < beats-1; i++) begin
+        
+        // --- ADDRESS CALCULATION LOGIC (From your Ideal File) ---
+        // This calculates the Next Address based on Burst Type
+        
+        // Handle INCREMENTING Bursts (INCR, INCR4, INCR8, INCR16)
+        if(hburst_val inside {3'b001, 3'b011, 3'b101, 3'b111}) begin
+            current_addr = current_addr + (1 << hsize_val);
+        end
+        
+        // Handle WRAPPING Bursts
+        else if(hburst_val == 3'b010) begin // WRAP 4
+            if(hsize_val == 0) current_addr = {current_addr[31:2], current_addr[1:0] + 1'b1};
+            if(hsize_val == 1) current_addr = {current_addr[31:3], current_addr[2:1] + 1'b1, current_addr[0]};
+            if(hsize_val == 2) current_addr = {current_addr[31:4], current_addr[3:2] + 1'b1, current_addr[1:0]};
+        end
+        else if(hburst_val == 3'b100) begin // WRAP 8
+            if(hsize_val == 0) current_addr = {current_addr[31:3], current_addr[2:0] + 1'b1};
+            if(hsize_val == 1) current_addr = {current_addr[31:4], current_addr[3:1] + 1'b1, current_addr[0]};
+            if(hsize_val == 2) current_addr = {current_addr[31:5], current_addr[4:2] + 1'b1, current_addr[1:0]};
+        end
+        else if(hburst_val == 3'b110) begin // WRAP 16
+            if(hsize_val == 0) current_addr = {current_addr[31:4], current_addr[3:0] + 1'b1};
+            if(hsize_val == 1) current_addr = {current_addr[31:5], current_addr[4:1] + 1'b1, current_addr[0]};
+            if(hsize_val == 2) current_addr = {current_addr[31:6], current_addr[5:2] + 1'b1, current_addr[1:0]};
+        end
+
+        // Send the SEQ item with the calculated address
+        req = ahb_seq_item::type_id::create("req");
+        start_item(req);
+        assert(req.randomize() with {
+            htrans == 2'b11; // SEQ
+            hburst == hburst_val;
+            hsize  == hsize_val;
+            hwrite == 1; 
+            hresetn == 1;
+            haddr  == current_addr; // Use calculated address
+        });
+        finish_item(req);
+    end
+
+    // End with IDLE
+    req = ahb_seq_item::type_id::create("idle");
+    start_item(req);
+    assert(req.randomize() with { htrans==0; hresetn==1; });
+    finish_item(req);
+
+  endtask
+endclass
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class ahb_master_burst_seq extends ahb_base_sequence;
+  `uvm_object_utils(ahb_master_burst_seq)
+
+  // Random Knobs (These control the transaction generation)
+  rand bit [2:0]  hburst_val;
+  rand bit [2:0]  hsize_val;
+  rand bit        hwrite_val;
+  rand int unsigned length_val; // For undefined length bursts (INCR)
+  rand bit [31:0] start_addr_val;
+
+  //----------------------------------------------------------------------------
+  // CONSTRAINTS
+  //----------------------------------------------------------------------------
+  constraint c_defaults {
+     // Valid AHB sizes for this project (8, 16, 32 bits)
+     hsize_val inside {0, 1, 2}; 
+     
+     // Address Alignment Rules (Critical for avoiding errors)
+     (hsize_val == 1) -> start_addr_val[0] == 0;
+     (hsize_val == 2) -> start_addr_val[1:0] == 0;
+     
+     // Keep address in valid test range
+     start_addr_val inside {[32'h8000_0000 : 32'h8000_0400]}; 
+
+     // INCR length constraint (Arbitrary limit to prevent infinite bursts)
+     if (hburst_val == 3'b001) {
+         length_val inside {[1:16]};
+     }
+  }
+
+  function new(string name="ahb_master_burst_seq");
+    super.new(name);
+  endfunction
+
+  //----------------------------------------------------------------------------
+  // BODY TASK
+  //----------------------------------------------------------------------------
+  task body();
+    ahb_seq_item req;
+    logic [31:0] current_addr;
+    int beats;
+
+    // A. Determine number of beats based on HBURST
+    case(hburst_val)
+      3'b000: beats = 1;          // SINGLE
+      3'b001: beats = length_val; // INCR (Undefined length)
+      3'b010, 3'b011: beats = 4;  // WRAP4, INCR4
+      3'b100, 3'b101: beats = 8;  // WRAP8, INCR8
+      3'b110, 3'b111: beats = 16; // WRAP16, INCR16
+      default: beats = 1;
+    endcase
+
+    // B. FIRST BEAT (NONSEQ)
+    req = ahb_seq_item::type_id::create("req_first");
+    start_item(req);
+    if (!req.randomize() with {
+        htrans  == 2'b10; // NONSEQ
+        hburst  == hburst_val;
+        hsize   == hsize_val;
+        hwrite  == hwrite_val;
+        haddr   == start_addr_val;
+        hresetn == 1;
+    }) `uvm_error(get_type_name(), "Randomization failed for First Beat");
+    
+    current_addr = req.haddr; // Initialize generic address tracker
+    finish_item(req);
+
+    // C. REMAINING BEATS (SEQ)
+    for(int i = 0; i < beats-1; i++) begin
+        
+        // --- ADDRESS CALCULATION ---
+        if(hburst_val inside {3'b001, 3'b011, 3'b101, 3'b111}) begin
+            // Incrementing Bursts
+            current_addr = current_addr + (1 << hsize_val); 
+        end
+        else begin
+            // Wrapping Bursts (Uses helper function below)
+            current_addr = calculate_wrap_addr(current_addr, hsize_val, hburst_val);
+        end
+
+        // Send the SEQ item
+        req = ahb_seq_item::type_id::create("req_seq");
+        start_item(req);
+        if (!req.randomize() with {
+            htrans  == 2'b11; // SEQ
+            hburst  == hburst_val;
+            hsize   == hsize_val;
+            hwrite  == hwrite_val;
+            haddr   == current_addr;
+            hresetn == 1;
+        }) `uvm_error(get_type_name(), "Randomization failed for SEQ Beat");
+        finish_item(req);
+    end
+
+    // D. End with IDLE (Good practice to clear bus)
+    req = ahb_seq_item::type_id::create("idle");
+    start_item(req);
+    assert(req.randomize() with { htrans==0; hresetn==1; });
+    finish_item(req);
+    
+  endtask
+
+  //----------------------------------------------------------------------------
+  // HELPER: WRAP ADDRESS CALCULATION
+  //----------------------------------------------------------------------------
+  function logic [31:0] calculate_wrap_addr(logic [31:0] addr, bit [2:0] size, bit [2:0] burst);
+      logic [31:0] next_addr = addr; // default
+      
+      // WRAP 4
+      if(burst == 3'b010) begin
+          if(size==0) next_addr = {addr[31:2], addr[1:0] + 1'b1};
+          if(size==1) next_addr = {addr[31:3], addr[2:1] + 1'b1, addr[0]};
+          if(size==2) next_addr = {addr[31:4], addr[3:2] + 1'b1, addr[1:0]};
+      end
+      // WRAP 8
+      else if(burst == 3'b100) begin
+          if(size==0) next_addr = {addr[31:3], addr[2:0] + 1'b1};
+          if(size==1) next_addr = {addr[31:4], addr[3:1] + 1'b1, addr[0]};
+          if(size==2) next_addr = {addr[31:5], addr[4:2] + 1'b1, addr[1:0]};
+      end
+      // WRAP 16
+      else if(burst == 3'b110) begin
+          if(size==0) next_addr = {addr[31:4], addr[3:0] + 1'b1};
+          if(size==1) next_addr = {addr[31:5], addr[4:1] + 1'b1, addr[0]};
+          if(size==2) next_addr = {addr[31:6], addr[5:2] + 1'b1, addr[1:0]};
+      end
+      return next_addr;
+  endfunction
+
+endclass
